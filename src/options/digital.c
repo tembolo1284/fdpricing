@@ -29,6 +29,8 @@ double fdp_price_digital_call_cash(
     int n_space,
     int n_time)
 {
+    (void)cash_amount;
+
     /* Create context */
     fdp_context_t* ctx = fdp_context_new();
     if (!ctx) return -1.0;
@@ -130,6 +132,8 @@ double fdp_price_digital_put_cash(
     int n_space,
     int n_time)
 {
+    (void)cash_amount;
+
     /* Create context */
     fdp_context_t* ctx = fdp_context_new();
     if (!ctx) return -1.0;

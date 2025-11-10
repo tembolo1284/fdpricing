@@ -103,6 +103,7 @@ void fdp_solver_explicit_step(
     double dt,
     double rate)
 {
+    (void)rate;
     const double* S = grid->space_points;
     int n = grid->n_space;
     
@@ -129,7 +130,7 @@ void fdp_solver_explicit_step(
         /* Grid spacing */
         double dS_plus = S[i + 1] - S[i];
         double dS_minus = S[i] - S[i - 1];
-        double dS_center = 0.5 * (dS_plus + dS_minus);
+        // double dS_center = 0.5 * (dS_plus + dS_minus);
         
         /* First derivative coefficient */
         double dV_dS = (V_old[i + 1] - V_old[i - 1]) / (dS_plus + dS_minus);
@@ -165,7 +166,7 @@ void fdp_solver_implicit_step(
      * This leads to a tridiagonal system:
      * a_i * V_{i-1} + b_i * V_i + c_i * V_{i+1} = d_i
      */
-    
+    (void)rate;
     const double* S = grid->space_points;
     int n = grid->n_space;
     
@@ -198,7 +199,7 @@ void fdp_solver_implicit_step(
             
             double dS_plus = S[i + 1] - S[i];
             double dS_minus = S[i] - S[i - 1];
-            double h_squared = dS_plus * dS_minus;
+            // double h_squared = dS_plus * dS_minus;
             
             /* Coefficients for implicit discretization */
             /* V_i - dt * [mu*(V_{i+1} - V_{i-1})/(dS+ + dS-) 
@@ -253,7 +254,7 @@ void fdp_solver_crank_nicolson_step(
      * 
      * Theta-method with theta = 0.5
      */
-    
+    (void)rate;
     const double* S = grid->space_points;
     int n = grid->n_space;
     double theta = 0.5;
