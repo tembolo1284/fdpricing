@@ -1,95 +1,32 @@
-/**
- * allocator.h - Internal memory allocation interface
+/* include/internal/utils/allocator.h - Memory allocation utilities */
+
+#ifndef FDP_INTERNAL_ALLOCATOR_H
+#define FDP_INTERNAL_ALLOCATOR_H
+
+#include "fdpricing.h"
+
+/* Forward declaration */
+struct fdp_context_s;
+typedef struct fdp_context_s fdp_context_t;
+
+/* ========================================================================
+ * Context-aware allocation macros
  * 
- * Provides a global allocator system that can be customized by the user.
- * All internal code should use these functions instead of malloc/free directly.
- */
+ * These are defined as macros to avoid circular dependencies.
+ * The actual inline functions are in context.h after the struct is defined.
+ * ======================================================================== */
 
-#ifndef FDPRICING_INTERNAL_ALLOCATOR_H
-#define FDPRICING_INTERNAL_ALLOCATOR_H
+/* Note: Use fdp_ctx_malloc, fdp_ctx_realloc, fdp_ctx_free functions
+ * defined in context.h for actual implementation */
 
-#include <stddef.h>
-
-/* Allocator function pointer types */
-typedef void* (*fdp_malloc_fn)(size_t);
-typedef void* (*fdp_realloc_fn)(void*, size_t);
-typedef void (*fdp_free_fn)(void*);
-
-/* Global allocator state */
-struct fdp_allocators_s {
-    fdp_malloc_fn f_malloc;
-    fdp_realloc_fn f_realloc;
-    fdp_free_fn f_free;
-};
-
-/* Declared here, defined in allocator.c */
-extern struct fdp_allocators_s _fdp_allocators;
-
-/* Internal allocation functions (inline for performance) */
-static inline void* fdp_malloc(size_t size)
-{
-    return _fdp_allocators.f_malloc(size);
-}
-
-static inline void* fdp_realloc(void* ptr, size_t size)
-{
-    return _fdp_allocators.f_realloc(ptr, size);
-}
-
-static inline void fdp_free(void* ptr)
-{
-    _fdp_allocators.f_free(ptr);
-}
-
-/* Utility allocation functions */
-static inline void* fdp_calloc(size_t count, size_t size)
-{
-    size_t total = count * size;
-    void* ptr = fdp_malloc(total);
-    if (ptr) {
-        char* p = (char*)ptr;
-        for (size_t i = 0; i < total; ++i) {
-            p[i] = 0;
-        }
-    }
-    return ptr;
-}
-
-static inline char* fdp_strdup(const char* str)
-{
-    if (!str) return NULL;
-    
-    size_t len = 0;
-    while (str[len]) ++len;
-    len++; /* Include null terminator */
-    
-    char* result = (char*)fdp_malloc(len);
-    if (result) {
-        for (size_t i = 0; i < len; ++i) {
-            result[i] = str[i];
-        }
-    }
-    return result;
-}
-
-/* Array allocation helpers with type safety */
+/* Convenience macro for allocating arrays */
 #define FDP_ALLOC_ARRAY(type, count) \
-    ((type*)fdp_malloc((count) * sizeof(type)))
+    ((type*)fdp_malloc(sizeof(type) * (count)))
 
-#define FDP_CALLOC_ARRAY(type, count) \
-    ((type*)fdp_calloc((count), sizeof(type)))
+/* Global allocation wrappers - these call the public API */
+#define FDP_MALLOC(size)           fdp_malloc(size)
+#define FDP_REALLOC(ptr, size)     fdp_realloc(ptr, size)
+#define FDP_CALLOC(count, size)    fdp_calloc(count, size)
+#define FDP_FREE(ptr)              fdp_free(ptr)
 
-#define FDP_REALLOC_ARRAY(ptr, type, count) \
-    ((type*)fdp_realloc((ptr), (count) * sizeof(type)))
-
-/* Initialize allocators (called internally) */
-void fdp_allocators_init(void);
-
-/* Set custom allocators (implementation of public API) */
-void fdp_allocators_set(
-    fdp_malloc_fn f_malloc,
-    fdp_realloc_fn f_realloc,
-    fdp_free_fn f_free
-);
-
-#endif /* FDPRICING_INTERNAL_ALLOCATOR_H */
+#endif /* FDP_INTERNAL_ALLOCATOR_H */

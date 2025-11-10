@@ -1,40 +1,27 @@
-/**
- * allocator.c - Memory allocator implementation
- */
+/* src/utils/allocator.c - Global memory allocator implementation */
 
 #include "fdpricing.h"
-#include "internal/utils/allocator.h"
 #include <stdlib.h>
-
-/* Global allocator state - initialized with standard library functions */
-struct fdp_allocators_s _fdp_allocators = {
-    malloc,
-    realloc,
-    free
-};
-
-void fdp_allocators_init(void)
-{
-    /* Reset to default allocators */
-    _fdp_allocators.f_malloc = malloc;
-    _fdp_allocators.f_realloc = realloc;
-    _fdp_allocators.f_free = free;
-}
-
-void fdp_allocators_set(
-    fdp_malloc_fn f_malloc,
-    fdp_realloc_fn f_realloc,
-    fdp_free_fn f_free)
-{
-    if (f_malloc && f_realloc && f_free) {
-        _fdp_allocators.f_malloc = f_malloc;
-        _fdp_allocators.f_realloc = f_realloc;
-        _fdp_allocators.f_free = f_free;
-    }
-}
+#include <string.h>
 
 /* ========================================================================
- * Public API Implementation
+ * Global Allocators (can be overridden)
+ * ======================================================================== */
+
+static struct {
+    void* (*f_malloc)(size_t);
+    void* (*f_realloc)(void*, size_t);
+    void  (*f_free)(void*);
+    int initialized;
+} g_allocators = {
+    .f_malloc = NULL,
+    .f_realloc = NULL,
+    .f_free = NULL,
+    .initialized = 0
+};
+
+/* ========================================================================
+ * Set Global Allocators
  * ======================================================================== */
 
 void fdp_set_allocators(
@@ -42,36 +29,60 @@ void fdp_set_allocators(
     void* (*f_realloc)(void*, size_t),
     void (*f_free)(void*))
 {
-    fdp_allocators_set(f_malloc, f_realloc, f_free);
+    if (f_malloc && f_realloc && f_free) {
+        g_allocators.f_malloc = f_malloc;
+        g_allocators.f_realloc = f_realloc;
+        g_allocators.f_free = f_free;
+        g_allocators.initialized = 1;
+    } else {
+        /* Reset to default */
+        g_allocators.f_malloc = NULL;
+        g_allocators.f_realloc = NULL;
+        g_allocators.f_free = NULL;
+        g_allocators.initialized = 0;
+    }
 }
 
-/* These just forward to the inline functions, but need to exist for linking */
+/* ========================================================================
+ * Global Memory Functions
+ * ======================================================================== */
+
 void* fdp_malloc(size_t size)
 {
-    return _fdp_allocators.f_malloc(size);
+    if (g_allocators.initialized && g_allocators.f_malloc) {
+        return g_allocators.f_malloc(size);
+    }
+    return malloc(size);
 }
 
 void* fdp_realloc(void* ptr, size_t size)
 {
-    return _fdp_allocators.f_realloc(ptr, size);
+    if (g_allocators.initialized && g_allocators.f_realloc) {
+        return g_allocators.f_realloc(ptr, size);
+    }
+    return realloc(ptr, size);
 }
 
 void* fdp_calloc(size_t count, size_t size)
 {
-    size_t total = count * size;
-    void* ptr = fdp_malloc(total);
-    if (ptr) {
-        char* p = (char*)ptr;
-        for (size_t i = 0; i < total; ++i) {
-            p[i] = 0;
+    if (g_allocators.initialized && g_allocators.f_malloc) {
+        size_t total = count * size;
+        void* ptr = g_allocators.f_malloc(total);
+        if (ptr) {
+            memset(ptr, 0, total);
         }
+        return ptr;
     }
-    return ptr;
+    return calloc(count, size);
 }
 
 void fdp_free(void* ptr)
 {
-    if (ptr) {
-        _fdp_allocators.f_free(ptr);
+    if (!ptr) return;
+    
+    if (g_allocators.initialized && g_allocators.f_free) {
+        g_allocators.f_free(ptr);
+    } else {
+        free(ptr);
     }
 }

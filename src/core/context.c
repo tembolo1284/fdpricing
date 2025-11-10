@@ -1,10 +1,12 @@
-/**
- * context.c - Context management implementation
- */
+/* src/core/context.c - Context management implementation */
 
 #include "fdpricing.h"
 #include "internal/core/context.h"
 #include "internal/utils/allocator.h"
+
+/* ========================================================================
+ * Context Management
+ * ======================================================================== */
 
 fdp_context_t* fdp_context_new(void)
 {
@@ -54,7 +56,10 @@ void fdp_context_set_allocators(
     }
 }
 
-/* Error handling */
+/* ========================================================================
+ * Error Handling
+ * ======================================================================== */
+
 fdp_error_t fdp_get_last_error(fdp_context_t* ctx)
 {
     return fdp_ctx_get_error(ctx);
