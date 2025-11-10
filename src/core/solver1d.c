@@ -1,4 +1,4 @@
-d/**
+/**
  * solver1d.c - 1D PDE solver implementation
  * 
  * Implements finite difference schemes for 1D PDEs
@@ -226,7 +226,7 @@ void fdp_solver_implicit_step(
     }
     
     /* Solve tridiagonal system */
-    fdp_solve_tridiagonal(a, b, c, d, V_new, n);
+    fdp_solve_tridiagonal(model->ctx, a, b, c, d, V_new, n);
     
     /* Cleanup */
     fdp_ctx_free(model->ctx, a);
@@ -319,7 +319,7 @@ void fdp_solver_crank_nicolson_step(
     }
     
     /* Solve */
-    fdp_solve_tridiagonal(a, b, c, d, V_new, n);
+    fdp_solve_tridiagonal(model->ctx, a, b, c, d, V_new, n);
     
     /* Cleanup */
     fdp_ctx_free(model->ctx, a);

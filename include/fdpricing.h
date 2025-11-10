@@ -100,10 +100,11 @@ typedef enum {
 
 /* Barrier types */
 typedef enum {
-    FDP_BARRIER_UP_OUT = 0,
-    FDP_BARRIER_UP_IN = 1,
-    FDP_BARRIER_DOWN_OUT = 2,
-    FDP_BARRIER_DOWN_IN = 3
+    FDP_BARRIER_NONE = 0,
+    FDP_BARRIER_UP_OUT = 1,
+    FDP_BARRIER_UP_IN = 2,
+    FDP_BARRIER_DOWN_OUT = 3,
+    FDP_BARRIER_DOWN_IN = 4
 } fdp_barrier_type_t;
 
 /* Model types */

@@ -95,7 +95,7 @@ double fdp_payoff_digital(
  * Get boundary condition at S_min for given option
  */
 double fdp_boundary_lower(
-    const fdp_option_s* option,
+    const fdp_option_t* option,  /* FIXED: was fdp_option_s* */
     double t,
     double rate
 );
@@ -104,7 +104,7 @@ double fdp_boundary_lower(
  * Get boundary condition at S_max for given option
  */
 double fdp_boundary_upper(
-    const fdp_option_s* option,
+    const fdp_option_t* option,  /* FIXED: was fdp_option_s* */
     double s_max,
     double t,
     double rate
@@ -118,7 +118,7 @@ double fdp_boundary_upper(
  * Check if option can be exercised at time t
  */
 int fdp_option_can_exercise(
-    const fdp_option_s* option,
+    const fdp_option_t* option,  /* FIXED: was fdp_option_s* */
     double t
 );
 
@@ -126,7 +126,7 @@ int fdp_option_can_exercise(
  * Compute exercise value (intrinsic value) at spot S
  */
 double fdp_option_exercise_value(
-    const fdp_option_s* option,
+    const fdp_option_t* option,  /* FIXED: was fdp_option_s* */
     double S
 );
 

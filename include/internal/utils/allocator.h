@@ -5,9 +5,7 @@
 
 #include "fdpricing.h"
 
-/* Forward declaration */
-struct fdp_context_s;
-typedef struct fdp_context_s fdp_context_t;
+/* No need to redefine fdp_context_t - it's already in fdpricing.h */
 
 /* ========================================================================
  * Context-aware allocation macros

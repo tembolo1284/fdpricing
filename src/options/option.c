@@ -1,15 +1,14 @@
-/**
- * option.c - Option specification and payoff functions
- */
+/* src/options/option.c - Option utilities and payoff functions */
 
 #include "fdpricing.h"
-#include "internal/options/option.h"
 #include "internal/core/context.h"
+#include "internal/options/option.h"
 #include "internal/utils/allocator.h"
 #include <math.h>
+#include <stdlib.h>
 
 /* ========================================================================
- * Option Creation (Public API)
+ * Option Creation and Destruction
  * ======================================================================== */
 
 fdp_option_t* fdp_option_new_vanilla(
@@ -19,14 +18,9 @@ fdp_option_t* fdp_option_new_vanilla(
     double strike,
     double maturity)
 {
-    if (!ctx || strike <= 0.0 || maturity <= 0.0) {
-        if (ctx) fdp_ctx_set_error(ctx, FDP_ERROR_INVALID_PARAM);
-        return NULL;
-    }
-    
     fdp_option_t* option = FDP_CTX_ALLOC_ARRAY(ctx, fdp_option_t, 1);
     if (!option) {
-        fdp_ctx_set_error(ctx, FDP_ERROR_ALLOCATION);
+        if (ctx) fdp_ctx_set_error(ctx, FDP_ERROR_ALLOCATION);
         return NULL;
     }
     
@@ -38,61 +32,11 @@ fdp_option_t* fdp_option_new_vanilla(
     option->maturity = maturity;
     
     /* Initialize unused fields */
-    option->barrier_type = FDP_BARRIER_UP_OUT;
+    option->barrier_type = FDP_BARRIER_NONE;
     option->barrier_level = 0.0;
     option->rebate = 0.0;
     option->exercise_times = NULL;
     option->n_exercise_times = 0;
-    option->n_averaging_points = 0;
-    option->is_fixed_strike = 0;
-    
-    return option;
-}
-
-fdp_option_t* fdp_option_new_bermudan(
-    fdp_context_t* ctx,
-    fdp_option_type_t type,
-    double strike,
-    double maturity,
-    const double* exercise_times,
-    int n_exercise_times)
-{
-    if (!ctx || strike <= 0.0 || maturity <= 0.0 || 
-        !exercise_times || n_exercise_times <= 0) {
-        if (ctx) fdp_ctx_set_error(ctx, FDP_ERROR_INVALID_PARAM);
-        return NULL;
-    }
-    
-    fdp_option_t* option = FDP_CTX_ALLOC_ARRAY(ctx, fdp_option_t, 1);
-    if (!option) {
-        fdp_ctx_set_error(ctx, FDP_ERROR_ALLOCATION);
-        return NULL;
-    }
-    
-    /* Copy exercise times */
-    option->exercise_times = FDP_CTX_ALLOC_ARRAY(ctx, double, n_exercise_times);
-    if (!option->exercise_times) {
-        fdp_ctx_free(ctx, option);
-        fdp_ctx_set_error(ctx, FDP_ERROR_ALLOCATION);
-        return NULL;
-    }
-    
-    for (int i = 0; i < n_exercise_times; ++i) {
-        option->exercise_times[i] = exercise_times[i];
-    }
-    
-    option->ctx = ctx;
-    option->category = FDP_OPTION_CATEGORY_VANILLA;
-    option->type = type;
-    option->style = FDP_STYLE_BERMUDAN;
-    option->strike = strike;
-    option->maturity = maturity;
-    option->n_exercise_times = n_exercise_times;
-    
-    /* Initialize unused fields */
-    option->barrier_type = FDP_BARRIER_UP_OUT;
-    option->barrier_level = 0.0;
-    option->rebate = 0.0;
     option->n_averaging_points = 0;
     option->is_fixed_strike = 0;
     
@@ -108,14 +52,9 @@ fdp_option_t* fdp_option_new_barrier(
     double barrier_level,
     double rebate)
 {
-    if (!ctx || strike <= 0.0 || maturity <= 0.0 || barrier_level <= 0.0) {
-        if (ctx) fdp_ctx_set_error(ctx, FDP_ERROR_INVALID_PARAM);
-        return NULL;
-    }
-    
     fdp_option_t* option = FDP_CTX_ALLOC_ARRAY(ctx, fdp_option_t, 1);
     if (!option) {
-        fdp_ctx_set_error(ctx, FDP_ERROR_ALLOCATION);
+        if (ctx) fdp_ctx_set_error(ctx, FDP_ERROR_ALLOCATION);
         return NULL;
     }
     
@@ -145,14 +84,9 @@ fdp_option_t* fdp_option_new_asian(
     double maturity,
     int n_averaging_points)
 {
-    if (!ctx || strike <= 0.0 || maturity <= 0.0 || n_averaging_points <= 0) {
-        if (ctx) fdp_ctx_set_error(ctx, FDP_ERROR_INVALID_PARAM);
-        return NULL;
-    }
-    
     fdp_option_t* option = FDP_CTX_ALLOC_ARRAY(ctx, fdp_option_t, 1);
     if (!option) {
-        fdp_ctx_set_error(ctx, FDP_ERROR_ALLOCATION);
+        if (ctx) fdp_ctx_set_error(ctx, FDP_ERROR_ALLOCATION);
         return NULL;
     }
     
@@ -165,7 +99,7 @@ fdp_option_t* fdp_option_new_asian(
     option->n_averaging_points = n_averaging_points;
     
     /* Initialize unused fields */
-    option->barrier_type = FDP_BARRIER_UP_OUT;
+    option->barrier_type = FDP_BARRIER_NONE;
     option->barrier_level = 0.0;
     option->rebate = 0.0;
     option->exercise_times = NULL;
@@ -182,19 +116,9 @@ fdp_option_t* fdp_option_new_lookback(
     double maturity,
     int is_fixed_strike)
 {
-    if (!ctx || maturity <= 0.0) {
-        if (ctx) fdp_ctx_set_error(ctx, FDP_ERROR_INVALID_PARAM);
-        return NULL;
-    }
-    
-    if (is_fixed_strike && strike <= 0.0) {
-        fdp_ctx_set_error(ctx, FDP_ERROR_INVALID_PARAM);
-        return NULL;
-    }
-    
     fdp_option_t* option = FDP_CTX_ALLOC_ARRAY(ctx, fdp_option_t, 1);
     if (!option) {
-        fdp_ctx_set_error(ctx, FDP_ERROR_ALLOCATION);
+        if (ctx) fdp_ctx_set_error(ctx, FDP_ERROR_ALLOCATION);
         return NULL;
     }
     
@@ -202,12 +126,12 @@ fdp_option_t* fdp_option_new_lookback(
     option->category = FDP_OPTION_CATEGORY_LOOKBACK;
     option->type = type;
     option->style = FDP_STYLE_EUROPEAN;
-    option->strike = is_fixed_strike ? strike : 0.0;
+    option->strike = strike;
     option->maturity = maturity;
     option->is_fixed_strike = is_fixed_strike;
     
     /* Initialize unused fields */
-    option->barrier_type = FDP_BARRIER_UP_OUT;
+    option->barrier_type = FDP_BARRIER_NONE;
     option->barrier_level = 0.0;
     option->rebate = 0.0;
     option->exercise_times = NULL;
@@ -217,17 +141,62 @@ fdp_option_t* fdp_option_new_lookback(
     return option;
 }
 
+fdp_option_t* fdp_option_new_bermudan(
+    fdp_context_t* ctx,
+    fdp_option_type_t type,
+    double strike,
+    double maturity,
+    const double* exercise_times,
+    int n_exercise_times)
+{
+    fdp_option_t* option = FDP_CTX_ALLOC_ARRAY(ctx, fdp_option_t, 1);
+    if (!option) {
+        if (ctx) fdp_ctx_set_error(ctx, FDP_ERROR_ALLOCATION);
+        return NULL;
+    }
+    
+    /* Copy exercise times */
+    double* times = FDP_CTX_ALLOC_ARRAY(ctx, double, n_exercise_times);
+    if (!times) {
+        FDP_CTX_FREE(ctx, option);
+        if (ctx) fdp_ctx_set_error(ctx, FDP_ERROR_ALLOCATION);
+        return NULL;
+    }
+    
+    for (int i = 0; i < n_exercise_times; ++i) {
+        times[i] = exercise_times[i];
+    }
+    
+    option->ctx = ctx;
+    option->category = FDP_OPTION_CATEGORY_VANILLA;
+    option->type = type;
+    option->style = FDP_STYLE_BERMUDAN;
+    option->strike = strike;
+    option->maturity = maturity;
+    option->exercise_times = times;
+    option->n_exercise_times = n_exercise_times;
+    
+    /* Initialize unused fields */
+    option->barrier_type = FDP_BARRIER_NONE;
+    option->barrier_level = 0.0;
+    option->rebate = 0.0;
+    option->n_averaging_points = 0;
+    option->is_fixed_strike = 0;
+    
+    return option;
+}
+
 void fdp_option_free(fdp_option_t* option)
 {
     if (!option) return;
     
-    fdp_context_t* ctx = option->ctx;
-    
+    /* Free exercise times if allocated */
     if (option->exercise_times) {
-        fdp_ctx_free(ctx, option->exercise_times);
+        FDP_CTX_FREE(option->ctx, option->exercise_times);
     }
     
-    fdp_ctx_free(ctx, option);
+    /* Free the option itself */
+    FDP_CTX_FREE(option->ctx, option);
 }
 
 /* ========================================================================
@@ -240,11 +209,9 @@ double fdp_payoff_vanilla(
     double strike)
 {
     if (type == FDP_OPTION_CALL) {
-        double intrinsic = S - strike;
-        return (intrinsic > 0.0) ? intrinsic : 0.0;
+        return fmax(S - strike, 0.0);
     } else {
-        double intrinsic = strike - S;
-        return (intrinsic > 0.0) ? intrinsic : 0.0;
+        return fmax(strike - S, 0.0);
     }
 }
 
@@ -257,21 +224,22 @@ double fdp_payoff_barrier(
     double rebate,
     int barrier_hit)
 {
+    (void)barrier_level;
     double vanilla_payoff = fdp_payoff_vanilla(type, S, strike);
     
     switch (barrier_type) {
         case FDP_BARRIER_UP_OUT:
         case FDP_BARRIER_DOWN_OUT:
-            /* Knock-out: if barrier hit, get rebate, else vanilla payoff */
+            /* Knock-out: pay vanilla if barrier NOT hit, else rebate */
             return barrier_hit ? rebate : vanilla_payoff;
             
         case FDP_BARRIER_UP_IN:
         case FDP_BARRIER_DOWN_IN:
-            /* Knock-in: if barrier hit, get vanilla payoff, else rebate */
+            /* Knock-in: pay vanilla if barrier WAS hit, else rebate */
             return barrier_hit ? vanilla_payoff : rebate;
             
         default:
-            return 0.0;
+            return vanilla_payoff;
     }
 }
 
@@ -292,76 +260,73 @@ double fdp_payoff_digital(
  * ======================================================================== */
 
 double fdp_boundary_lower(
-    const fdp_option_s* option,
+    const fdp_option_t* option,  /* FIXED: was fdp_option_s* */
     double t,
     double rate)
 {
-    /* At S = 0 (or very small S) */
+    /* At S = 0, typically option values are known */
     double time_to_maturity = option->maturity - t;
     
     if (option->type == FDP_OPTION_CALL) {
-        /* Call is worthless when S = 0 */
+        /* Call worth 0 at S=0 */
         return 0.0;
     } else {
-        /* Put approaches discounted strike when S = 0 */
+        /* Put worth K*exp(-r*(T-t)) at S=0 */
         return option->strike * exp(-rate * time_to_maturity);
     }
 }
 
 double fdp_boundary_upper(
-    const fdp_option_s* option,
+    const fdp_option_t* option,  /* FIXED: was fdp_option_s* */
     double s_max,
     double t,
     double rate)
 {
-    /* At S = S_max (very large S) */
+    /* At S = S_max (very large), option behaves like stock or strike */
     double time_to_maturity = option->maturity - t;
     
     if (option->type == FDP_OPTION_CALL) {
-        /* Call approaches S - K*exp(-r*T) for large S */
+        /* Call worth S - K*exp(-r*(T-t)) */
         return s_max - option->strike * exp(-rate * time_to_maturity);
     } else {
-        /* Put is worthless for large S */
+        /* Put worth 0 at very large S */
         return 0.0;
     }
 }
 
 /* ========================================================================
- * Early Exercise
+ * Early Exercise (American/Bermudan)
  * ======================================================================== */
 
 int fdp_option_can_exercise(
-    const fdp_option_s* option,
+    const fdp_option_t* option,  /* FIXED: was fdp_option_s* */
     double t)
 {
-    if (!option) return 0;
-    
+    /* American options can always exercise */
     if (option->style == FDP_STYLE_AMERICAN) {
-        /* Can exercise any time */
         return 1;
     }
     
+    /* Bermudan options can only exercise at specific times */
     if (option->style == FDP_STYLE_BERMUDAN) {
-        /* Check if t matches any exercise time */
-        double tolerance = 1e-10;
+        double tolerance = 1e-8;
+        /* Check if current time matches any exercise date */
         for (int i = 0; i < option->n_exercise_times; ++i) {
             if (fabs(t - option->exercise_times[i]) < tolerance) {
                 return 1;
             }
         }
-        return 0;
     }
     
-    /* European: only at maturity */
+    /* European options cannot exercise early */
     return 0;
 }
 
 double fdp_option_exercise_value(
-    const fdp_option_s* option,
+    const fdp_option_t* option,  /* FIXED: was fdp_option_s* */
     double S)
 {
-    if (!option) return 0.0;
-    
     /* Exercise value is just the intrinsic value */
+    /* For vanilla options: max(S-K, 0) for calls, max(K-S, 0) for puts */
     return fdp_payoff_vanilla(option->type, S, option->strike);
 }

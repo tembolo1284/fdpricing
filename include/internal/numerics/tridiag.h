@@ -1,50 +1,60 @@
-/**
- * tridiag.h - Tridiagonal matrix solver
- * 
- * Solves systems of the form: A*x = b
- * where A is tridiagonal:
- *   a[i]*x[i-1] + b[i]*x[i] + c[i]*x[i+1] = d[i]
- * 
- * Uses Thomas algorithm (specialized Gaussian elimination)
- * Complexity: O(n)
- */
+/* include/internal/numerics/tridiag.h - Tridiagonal solver */
 
-#ifndef FDPRICING_INTERNAL_TRIDIAG_H
-#define FDPRICING_INTERNAL_TRIDIAG_H
+#ifndef FDP_INTERNAL_TRIDIAG_H
+#define FDP_INTERNAL_TRIDIAG_H
+
+#include "fdpricing.h"
+
+/* Forward declaration */
+struct fdp_context_s;
+
+/* ========================================================================
+ * Tridiagonal System Solver (Thomas Algorithm)
+ * ======================================================================== */
 
 /**
  * Solve tridiagonal system: A*x = d
  * 
- * @param a Lower diagonal (size n-1, a[0] unused)
- * @param b Main diagonal (size n)
- * @param c Upper diagonal (size n-1, c[n-1] unused)
- * @param d Right-hand side (size n)
- * @param x Solution vector (size n, output)
- * @param n Size of system
+ * The matrix A has the form:
+ *   b[0]  c[0]   0     0    ...   0
+ *   a[0]  b[1]  c[1]   0    ...   0
+ *    0    a[1]  b[2]  c[2]  ...   0
+ *   ...   ...   ...   ...   ...  ...
+ *    0     0     0    a[n-2] b[n-1]
  * 
- * Note: This modifies c and d arrays during computation
+ * Uses Thomas algorithm (specialized Gaussian elimination for tridiagonal systems)
+ * Time complexity: O(n), Space complexity: O(n)
+ * 
+ * @param ctx   Context for memory allocation
+ * @param a     Lower diagonal [a[0], ..., a[n-2]] (length n-1)
+ * @param b     Main diagonal [b[0], ..., b[n-1]] (length n)
+ * @param c     Upper diagonal [c[0], ..., c[n-2]] (length n-1)
+ * @param d     Right-hand side [d[0], ..., d[n-1]] (length n)
+ * @param x     Solution vector (output) [x[0], ..., x[n-1]] (length n)
+ * @param n     Size of the system
  */
 void fdp_solve_tridiagonal(
-    const double* a,
-    const double* b,
-    double* c,        /* Modified during solve */
-    double* d,        /* Modified during solve */
-    double* x,
-    int n
-);
-
-/**
- * Solve tridiagonal system with separate work arrays
- * Does not modify input arrays
- */
-void fdp_solve_tridiagonal_safe(
+    fdp_context_t* ctx,
     const double* a,
     const double* b,
     const double* c,
     const double* d,
     double* x,
-    double* work,    /* Work array, size 2*n */
-    int n
-);
+    int n);
 
-#endif /* FDPRICING_INTERNAL_TRIDIAG_H */
+/**
+ * Solve tridiagonal system with partial pivoting (more stable)
+ * 
+ * Same interface as fdp_solve_tridiagonal, but uses pivoting for
+ * better numerical stability when diagonal elements are small.
+ */
+void fdp_solve_tridiagonal_pivoting(
+    fdp_context_t* ctx,
+    const double* a,
+    const double* b,
+    const double* c,
+    const double* d,
+    double* x,
+    int n);
+
+#endif /* FDP_INTERNAL_TRIDIAG_H */

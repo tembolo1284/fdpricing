@@ -13,9 +13,8 @@
 #include "fdpricing.h"
 #include "internal/core/context.h"
 
-/* Forward declarations */
+/* Forward declarations - don't redefine typedef, it's in fdpricing.h */
 struct fdp_model_s;
-typedef struct fdp_model_s fdp_model_t;
 
 /* Model virtual table for polymorphism */
 typedef struct {
