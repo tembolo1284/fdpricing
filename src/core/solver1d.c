@@ -14,6 +14,21 @@
 #include "internal/utils/allocator.h"
 #include <math.h>
 #include <string.h>
+#include <stdio.h>
+
+/* Diagnostic function to check for NaN/Inf in arrays */
+static int check_array_valid(const double* arr, int n, const char* name) {
+    for (int i = 0; i < n; i++) {
+        if (isnan(arr[i]) || isinf(arr[i])) {
+            printf("ERROR: %s[%d] = %f (invalid!)\n", name, i, arr[i]);
+            return 0;
+        }
+        if (fabs(arr[i]) > 1e10) {
+            printf("WARNING: %s[%d] = %f (very large!)\n", name, i, arr[i]);
+        }
+    }
+    return 1;
+}
 
 /* ========================================================================
  * Terminal Condition Setup
@@ -27,10 +42,26 @@ void fdp_set_terminal_condition(
     const double* S = grid->space_points;
     int n = grid->n_space;
     
+    /* DEBUG: Print space grid endpoints */
+    printf("DEBUG TERMINAL: n_space=%d\n", n);
+    printf("DEBUG TERMINAL: S[0]=%.6f, S[%d]=%.6f\n", S[0], n-1, S[n-1]);
+    printf("DEBUG TERMINAL: Strike K=%.6f, Type=%d (0=call, 1=put)\n", 
+           option->strike, option->type);
+    
     /* Set V(S, T) = payoff(S) */
     for (int i = 0; i < n; ++i) {
         V[i] = fdp_payoff_vanilla(option->type, S[i], option->strike);
     }
+    
+    /* DEBUG: Print payoffs at boundaries */
+    printf("DEBUG TERMINAL: Payoff at S[0]=%.6f: V[0]=%.6f\n", S[0], V[0]);
+    printf("DEBUG TERMINAL: Payoff at S[%d]=%.6f: V[%d]=%.6f\n", 
+           n-1, S[n-1], n-1, V[n-1]);
+    
+    /* DEBUG: Print a few middle points */
+    int mid = n / 2;
+    printf("DEBUG TERMINAL: Payoff at S[%d]=%.6f: V[%d]=%.6f\n", 
+           mid, S[mid], mid, V[mid]);
 }
 
 /* ========================================================================
@@ -472,6 +503,15 @@ fdp_result_t* fdp_solve_1d(
     int n_time = grid->n_time;
     double dt = grid->dt;
     
+    /* Extract rate from model */
+    double rate = 0.05;  /* Default fallback */
+    if (model && model->vtable && model->vtable->get_coefficients_1d) {
+        double mu_dummy, sigma_dummy;
+        /* Get rate from model at spot price and t=0 */
+        model->vtable->get_coefficients_1d(model, grid->spot, 0.0, 
+                                           &mu_dummy, &sigma_dummy, &rate);
+    }
+    
     /* Check CFL condition for explicit method */
     if (params->method == FDP_SOLVER_EXPLICIT) {
         if (!fdp_check_cfl_condition(grid, model, dt)) {
@@ -525,12 +565,25 @@ fdp_result_t* fdp_solve_1d(
     /* Set terminal condition */
     fdp_set_terminal_condition(V_old, grid, option);
     
+    /* DEBUG: Check terminal condition */
+    printf("DEBUG SOLVER: Checking terminal condition...\n");
+    if (!check_array_valid(V_old, n_space, "V_terminal")) {
+        printf("ERROR: Terminal condition has invalid values!\n");
+    }
+    printf("DEBUG SOLVER: Terminal condition range: [%.6f, %.6f]\n", 
+           V_old[0], V_old[n_space-1]);
+    
     /* Store terminal condition in surface */
     memcpy(result->surface + n_time * n_space, V_old, n_space * sizeof(double));
     
     /* Time-stepping backward from maturity to present */
     for (int n = n_time - 1; n >= 0; --n) {
         double t = grid->time_points[n];
+        
+        /* DEBUG: Print info for first time step */
+        if (n == n_time - 1) {
+            printf("DEBUG SOLVER: First time step, t=%.6f, dt=%.6f, rate=%.6f\n", t, dt, rate);
+        }
         
         /* Compute exercise value for American options */
         if (option->style == FDP_STYLE_AMERICAN) {
@@ -543,23 +596,23 @@ fdp_result_t* fdp_solve_1d(
         if (option->style == FDP_STYLE_AMERICAN && params->method == FDP_SOLVER_PSOR) {
             int iters;
             fdp_solver_psor_step(V_new, V_old, exercise, grid, model, t, dt,
-                                params->method == FDP_SOLVER_IMPLICIT ? 0.05 : 0.05,
+                                rate,
                                 params->omega, params->tolerance, 
                                 params->max_iterations, &iters);
             result->iterations += iters;
         } else {
             switch (params->method) {
                 case FDP_SOLVER_EXPLICIT:
-                    fdp_solver_explicit_step(V_new, V_old, grid, model, t, dt, 0.05);
+                    fdp_solver_explicit_step(V_new, V_old, grid, model, t, dt, rate);
                     break;
                 case FDP_SOLVER_IMPLICIT:
-                    fdp_solver_implicit_step(V_new, V_old, grid, model, t, dt, 0.05);
+                    fdp_solver_implicit_step(V_new, V_old, grid, model, t, dt, rate);
                     break;
                 case FDP_SOLVER_CRANK_NICOLSON:
-                    fdp_solver_crank_nicolson_step(V_new, V_old, grid, model, t, dt, 0.05);
+                    fdp_solver_crank_nicolson_step(V_new, V_old, grid, model, t, dt, rate);
                     break;
                 default:
-                    fdp_solver_crank_nicolson_step(V_new, V_old, grid, model, t, dt, 0.05);
+                    fdp_solver_crank_nicolson_step(V_new, V_old, grid, model, t, dt, rate);
                     break;
             }
             
@@ -573,8 +626,23 @@ fdp_result_t* fdp_solve_1d(
             }
         }
         
+        /* DEBUG: Check after first step */
+        if (n == n_time - 1) {
+            printf("DEBUG SOLVER: After first step, checking V_new...\n");
+            if (!check_array_valid(V_new, n_space, "V_new_step1")) {
+                printf("ERROR: V_new has invalid values after first step!\n");
+                /* Print first few and last few values */
+                printf("V_new[0:4] = [%.6f, %.6f, %.6f, %.6f]\n", 
+                       V_new[0], V_new[1], V_new[2], V_new[3]);
+                printf("V_new[%d:%d] = [%.6f, %.6f, %.6f, %.6f]\n",
+                       n_space-4, n_space-1,
+                       V_new[n_space-4], V_new[n_space-3], 
+                       V_new[n_space-2], V_new[n_space-1]);
+            }
+        }
+        
         /* Apply boundary conditions */
-        fdp_apply_boundary_conditions(V_new, grid, option, t, 0.05);
+        fdp_apply_boundary_conditions(V_new, grid, option, t, rate);
         
         /* Store in surface */
         memcpy(result->surface + n * n_space, V_new, n_space * sizeof(double));

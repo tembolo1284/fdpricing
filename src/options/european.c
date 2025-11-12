@@ -8,6 +8,7 @@
 #include "internal/options/option.h"
 #include <math.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 /* ========================================================================
  * European Call Option
@@ -25,7 +26,10 @@ double fdp_price_european_call(
 {
     /* Create context */
     fdp_context_t* ctx = fdp_context_new();
-    if (!ctx) return -1.0;
+    if (!ctx) {
+        printf("DEBUG: Context creation failed\n"); 
+        return -1.0;
+    }
     
     /* Create grid with reasonable bounds: [0, 3*max(S,K)] */
     double s_min = 0.0;
@@ -43,6 +47,7 @@ double fdp_price_european_call(
     );
     
     if (!grid) {
+        printf("DEBUG: Grid creation failed\n");
         fdp_context_free(ctx);
         return -1.0;
     }
@@ -50,6 +55,7 @@ double fdp_price_european_call(
     /* Create GBM model (Black-Scholes) */
     fdp_model_t* model = fdp_model_new_gbm(ctx, rate, div_yield, vol);
     if (!model) {
+        printf("DEBUG: Model creation failed\n");
         fdp_grid_free(grid);
         fdp_context_free(ctx);
         return -1.0;
@@ -65,6 +71,7 @@ double fdp_price_european_call(
     );
     
     if (!option) {
+        printf("DEBUG: Option creation failed\n");
         fdp_model_free(model);
         fdp_grid_free(grid);
         fdp_context_free(ctx);
@@ -74,6 +81,7 @@ double fdp_price_european_call(
     /* Create solver parameters - use Crank-Nicolson by default */
     fdp_solver_params_t* params = fdp_solver_params_new(ctx);
     if (!params) {
+        printf("DEBUG: Solver params creation failed\n");
         fdp_option_free(option);
         fdp_model_free(model);
         fdp_grid_free(grid);
@@ -84,9 +92,11 @@ double fdp_price_european_call(
     fdp_solver_params_set_method(params, FDP_SOLVER_CRANK_NICOLSON);
     
     /* Solve PDE */
+    printf("DEBUG: About to solve PDE\n");
     fdp_result_t* result = fdp_solve_pde(ctx, model, option, grid, params);
     
     if (!result) {
+        printf("DEBUG: PDE solving failed\n");
         fdp_solver_params_free(params);
         fdp_option_free(option);
         fdp_model_free(model);
@@ -94,9 +104,10 @@ double fdp_price_european_call(
         fdp_context_free(ctx);
         return -1.0;
     }
-    
+    printf("DEBUG: About to extract price\n");
     /* Extract price at current spot */
     double price = fdp_result_get_price(result, spot);
+    printf("DEBUG: Extracted price = %f\n", price);
     
     /* Cleanup */
     fdp_result_free(result);

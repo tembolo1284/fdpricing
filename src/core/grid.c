@@ -27,7 +27,7 @@ fdp_grid_t* fdp_grid_new_1d(
         return NULL;
     }
     
-    if (s_min <= 0.0 || s_max <= s_min || spot <= 0.0 || t_max <= 0.0) {
+    if (s_min < 0.0 || s_max <= s_min || spot <= 0.0 || t_max <= 0.0) {
         fdp_ctx_set_error(ctx, FDP_ERROR_INVALID_PARAM);
         return NULL;
     }

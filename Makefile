@@ -1,5 +1,5 @@
 # ============================================================================
-# FDPricing Library - Professional Makefile
+# FDPricing Library - Makefile
 # ============================================================================
 
 # ============================================================================
@@ -264,7 +264,7 @@ examples: $(EXAMPLE_BINS)
 
 $(BIN_DIR)/%: examples/%.c $(STATIC_LIB)
 	@echo "  $(COLOR_GREEN)CCLD$(COLOR_RESET)    $@"
-	@$(CC) $(CFLAGS) $(INCLUDES) $< -o $@ -L$(LIB_DIR) -l$(LIB_NAME) $(LDFLAGS)
+	@$(CC) $(CFLAGS) $(INCLUDES) $< -o $@ $(STATIC_LIB) $(LDFLAGS)
 
 # ============================================================================
 # Test suite with Criterion
@@ -274,7 +274,7 @@ tests: $(TEST_BINS)
 
 $(TEST_BIN_DIR)/%: $(TEST_DIR)/%.c $(STATIC_LIB)
 	@echo "  $(COLOR_GREEN)CCLD$(COLOR_RESET)    $@ (Criterion)"
-	@$(CC) $(CFLAGS) $(INCLUDES) $< -o $@ -L$(LIB_DIR) -l$(LIB_NAME) $(TEST_LDFLAGS)
+	@$(CC) $(CFLAGS) $(INCLUDES) $< -o $@ $(STATIC_LIB) $(TEST_LDFLAGS)
 
 # Check if Criterion is installed
 check-criterion:
@@ -463,6 +463,7 @@ print-vars:
 	@echo "ALL_OBJS:      $(ALL_OBJS)"
 	@echo "TEST_SRCS:     $(TEST_SRCS)"
 	@echo "TEST_BINS:     $(TEST_BINS)"
+	@echo "EXAMPLE_BINS:  $(EXAMPLE_BINS)"
 
 # Format code (if clang-format is available)
 format:
