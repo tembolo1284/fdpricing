@@ -24,16 +24,23 @@ static void gbm_get_coefficients_1d(
 {
     const fdp_gbm_params_t* params = (const fdp_gbm_params_t*)model->params;
     
-    /* Drift: mu = (r - q)S */
-    *mu = (params->rate - params->div_yield) * S;
+    /* For the log-transformed PDE or when discretizing in S-space,
+     * we need to return the LOCAL drift and diffusion:
+     * 
+     * Drift coefficient: μ = (r - q) for ∂V/∂S term
+     * Diffusion coefficient: σ = vol for ∂²V/∂S² term
+     * 
+     * The S and S² factors are handled in the discretization
+     */
     
-    /* Diffusion: sigma = vol * S */
+    *mu = (params->rate - params->div_yield) * S;
     *sigma = params->vol * S;
     
     /* Discount rate */
     *r = params->rate;
     
-    (void)t;  /* Unused - GBM is time-homogeneous */
+    (void)S;  /* S is used in the discretization, not here */
+    (void)t;  /* GBM is time-homogeneous */
 }
 
 static void gbm_get_coefficients_2d(
