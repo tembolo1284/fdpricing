@@ -280,16 +280,12 @@ void fdp_solver_crank_nicolson_step(
     double dt,
     double rate)
 {
-    /* Crank-Nicolson: Average of explicit and implicit
-     * V^{n+1} - (dt/2)*L(V^{n+1}) = V^n + (dt/2)*L(V^n)
-     * 
-     * Theta-method with theta = 0.5
-     */
     (void)rate;
     
     const double* S = grid->space_points;
     int n = grid->n_space;
     double theta = 0.5;
+    double dt_eff = -dt;
     
     /* Allocate tridiagonal system */
     double* a = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);
@@ -308,47 +304,46 @@ void fdp_solver_crank_nicolson_step(
     /* Build system */
     for (int i = 0; i < n; ++i) {
         if (i == 0 || i == n - 1) {
-            /* Boundary points: keep fixed (will be overwritten by BC later) */
             a[i] = 0.0;
             b[i] = 1.0;
             c[i] = 0.0;
             d[i] = V_old[i];
         } else {
-            /* Interior points */
             double mu, sigma, r;
-            model->vtable->get_coefficients_1d(model, S[i], t + dt * theta, 
+            model->vtable->get_coefficients_1d(model, S[i], t + dt_eff * theta, 
                                                &mu, &sigma, &r);
+            
+            /* Model returns: mu = (r-q), sigma = vol
+             * We need to construct: (r-q)*S and vol*S for the PDE
+             */
+            double mu_S = mu * S[i];        // (r-q)*S
+            double sigma_S = sigma * S[i];  // vol*S
             
             double dS_plus = S[i + 1] - S[i];
             double dS_minus = S[i] - S[i - 1];
-            
-            /* For Black-Scholes: coefficients already include S factors
-             * mu = (r-q)*S, sigma = vol*S
-             * So alpha = 0.5 * sigma^2 = 0.5 * vol^2 * S^2
-             */
-            double alpha = 0.5 * sigma * sigma;
+            double alpha = 0.5 * sigma_S * sigma_S;  // 0.5 * vol² * S²
             
             /* Implicit part coefficients (LHS) */
-            double a_impl = -theta * dt * (-mu / (dS_plus + dS_minus) + 
+            double a_impl = -theta * dt_eff * (-mu_S / (dS_plus + dS_minus) + 
                             alpha * 2.0 / (dS_minus * (dS_plus + dS_minus)));
             
-            double c_impl = -theta * dt * (mu / (dS_plus + dS_minus) + 
+            double c_impl = -theta * dt_eff * (mu_S / (dS_plus + dS_minus) + 
                             alpha * 2.0 / (dS_plus * (dS_plus + dS_minus)));
             
-            double b_impl = 1.0 - theta * dt * (-alpha * 2.0 * (1.0 / dS_plus + 1.0 / dS_minus) / 
+            double b_impl = 1.0 - theta * dt_eff * (-alpha * 2.0 * (1.0 / dS_plus + 1.0 / dS_minus) / 
                             (dS_plus + dS_minus) - r);
             
             /* Explicit part coefficients (RHS) */
-            double a_expl = (1.0 - theta) * dt * (-mu / (dS_plus + dS_minus) + 
+            double a_expl = (1.0 - theta) * dt_eff * (-mu_S / (dS_plus + dS_minus) + 
                             alpha * 2.0 / (dS_minus * (dS_plus + dS_minus)));
             
-            double c_expl = (1.0 - theta) * dt * (mu / (dS_plus + dS_minus) + 
+            double c_expl = (1.0 - theta) * dt_eff * (mu_S / (dS_plus + dS_minus) + 
                             alpha * 2.0 / (dS_plus * (dS_plus + dS_minus)));
             
-            double b_expl = 1.0 + (1.0 - theta) * dt * (-alpha * 2.0 * (1.0 / dS_plus + 1.0 / dS_minus) / 
+            double b_expl = 1.0 + (1.0 - theta) * dt_eff * (-alpha * 2.0 * (1.0 / dS_plus + 1.0 / dS_minus) / 
                             (dS_plus + dS_minus) - r);
             
-            /* Set system coefficients for LHS matrix */
+            /* Set system coefficients */
             a[i] = a_impl;
             b[i] = b_impl;
             c[i] = c_impl;
@@ -358,7 +353,7 @@ void fdp_solver_crank_nicolson_step(
         }
     }
     
-    /* Solve tridiagonal system */
+    /* Solve */
     fdp_solve_tridiagonal(model->ctx, a, b, c, d, V_new, n);
     
     /* Cleanup */
