@@ -291,11 +291,6 @@ void fdp_solver_crank_nicolson_step(
     int n = grid->n_space;
     double theta = 0.5;
     
-    /* DEBUG: Check inputs */
-    printf("DEBUG CN: n=%d, dt=%.6f, theta=%.2f\n", n, dt, theta);
-    printf("DEBUG CN: S[0]=%.2f, S[n-1]=%.2f\n", S[0], S[n-1]);
-    printf("DEBUG CN: V_old[0]=%.6f, V_old[n-1]=%.6f\n", V_old[0], V_old[n-1]);
-    
     /* Allocate tridiagonal system */
     double* a = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);
     double* b = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);
@@ -303,7 +298,6 @@ void fdp_solver_crank_nicolson_step(
     double* d = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);
     
     if (!a || !b || !c || !d) {
-        printf("DEBUG CN: ERROR - Memory allocation failed!\n");
         if (a) fdp_ctx_free(model->ctx, a);
         if (b) fdp_ctx_free(model->ctx, b);
         if (c) fdp_ctx_free(model->ctx, c);
@@ -314,30 +308,25 @@ void fdp_solver_crank_nicolson_step(
     /* Build system */
     for (int i = 0; i < n; ++i) {
         if (i == 0 || i == n - 1) {
+            /* Boundary points: keep fixed (will be overwritten by BC later) */
             a[i] = 0.0;
             b[i] = 1.0;
             c[i] = 0.0;
             d[i] = V_old[i];
         } else {
+            /* Interior points */
             double mu, sigma, r;
             model->vtable->get_coefficients_1d(model, S[i], t + dt * theta, 
                                                &mu, &sigma, &r);
             
-            /* DEBUG: Check model coefficients at mid point */
-            if (i == n/2) {
-                printf("DEBUG CN: At S[%d]=%.2f: mu=%.6f, sigma=%.6f, r=%.6f\n",
-                       i, S[i], mu, sigma, r);
-            }
-            
             double dS_plus = S[i + 1] - S[i];
             double dS_minus = S[i] - S[i - 1];
-            double alpha = 0.5 * sigma * sigma;
             
-            /* DEBUG: Check grid spacing at mid point */
-            if (i == n/2) {
-                printf("DEBUG CN: dS_plus=%.6f, dS_minus=%.6f, alpha=%.6f\n",
-                       dS_plus, dS_minus, alpha);
-            }
+            /* For Black-Scholes: coefficients already include S factors
+             * mu = (r-q)*S, sigma = vol*S
+             * So alpha = 0.5 * sigma^2 = 0.5 * vol^2 * S^2
+             */
+            double alpha = 0.5 * sigma * sigma;
             
             /* Implicit part coefficients (LHS) */
             double a_impl = -theta * dt * (-mu / (dS_plus + dS_minus) + 
@@ -359,51 +348,18 @@ void fdp_solver_crank_nicolson_step(
             double b_expl = 1.0 + (1.0 - theta) * dt * (-alpha * 2.0 * (1.0 / dS_plus + 1.0 / dS_minus) / 
                             (dS_plus + dS_minus) - r);
             
-            /* DEBUG: Check matrix coefficients at mid point */
-            if (i == n/2) {
-                printf("DEBUG CN: LHS matrix row %d: a=%.6f, b=%.6f, c=%.6f\n", 
-                       i, a_impl, b_impl, c_impl);
-                printf("DEBUG CN: RHS coeffs: a_expl=%.6f, b_expl=%.6f, c_expl=%.6f\n",
-                       a_expl, b_expl, c_expl);
-            }
-            
-            /* Set system coefficients */
+            /* Set system coefficients for LHS matrix */
             a[i] = a_impl;
             b[i] = b_impl;
             c[i] = c_impl;
             
             /* RHS: Apply explicit part to V_old */
             d[i] = b_expl * V_old[i] + a_expl * V_old[i - 1] + c_expl * V_old[i + 1];
-            
-            /* DEBUG: Check RHS computation at mid point */
-            if (i == n/2) {
-                printf("DEBUG CN: d[%d] = %.6f*%.6f + %.6f*%.6f + %.6f*%.6f = %.6f\n",
-                       i, b_expl, V_old[i], a_expl, V_old[i-1], c_expl, V_old[i+1], d[i]);
-            }
         }
     }
     
-    /* DEBUG: Check boundary conditions and a few RHS values */
-    printf("DEBUG CN: d[0]=%.6f, d[%d]=%.6f, d[n-1]=%.6f\n", 
-           d[0], n/2, d[n/2], d[n-1]);
-    
-    /* Solve */
-    printf("DEBUG CN: About to solve tridiagonal system...\n");
+    /* Solve tridiagonal system */
     fdp_solve_tridiagonal(model->ctx, a, b, c, d, V_new, n);
-    
-    /* DEBUG: Check solution */
-    printf("DEBUG CN: After solve: V_new[0]=%.6f, V_new[%d]=%.6f, V_new[n-1]=%.6f\n", 
-           V_new[0], n/2, V_new[n/2], V_new[n-1]);
-    
-    /* Check for NaN/Inf */
-    int has_invalid = 0;
-    for (int i = 0; i < n; i++) {
-        if (isnan(V_new[i]) || isinf(V_new[i])) {
-            printf("DEBUG CN: ERROR - V_new[%d] = %f is invalid!\n", i, V_new[i]);
-            has_invalid = 1;
-            if (has_invalid > 5) break;  /* Don't spam too much */
-        }
-    }
     
     /* Cleanup */
     fdp_ctx_free(model->ctx, a);

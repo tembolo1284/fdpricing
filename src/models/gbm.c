@@ -33,14 +33,14 @@ static void gbm_get_coefficients_1d(
      * The S and S² factors are handled in the discretization
      */
     
-    *mu = (params->rate - params->div_yield) * S;
-    *sigma = params->vol * S;
+    *mu = (params->rate - params->div_yield);
+    *sigma = params->vol;
     
     /* Discount rate */
     *r = params->rate;
     
-    (void)S;  /* S is used in the discretization, not here */
-    (void)t;  /* GBM is time-homogeneous */
+    (void)S;
+    (void)t; 
 }
 
 static void gbm_get_coefficients_2d(

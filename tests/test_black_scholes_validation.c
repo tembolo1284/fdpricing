@@ -42,7 +42,7 @@ Test(black_scholes, atm_call_validation)
     double S = 100.0, K = 100.0, r = 0.05, q = 0.0, sigma = 0.20, T = 1.0;
     
     double analytical = black_scholes_call(S, K, r, q, sigma, T);
-    double numerical = fdp_price_european_call(S, K, r, q, sigma, T, 200, 200);
+    double numerical = fdp_price_european_call(S, K, r, q, sigma, T, 1000, 1000);
     
     cr_assert_float_eq(numerical, analytical, 0.5,
                        "ATM call: FD=%.4f, BS=%.4f, diff=%.4f",
@@ -54,7 +54,7 @@ Test(black_scholes, atm_put_validation)
     double S = 100.0, K = 100.0, r = 0.05, q = 0.0, sigma = 0.20, T = 1.0;
     
     double analytical = black_scholes_put(S, K, r, q, sigma, T);
-    double numerical = fdp_price_european_put(S, K, r, q, sigma, T, 200, 200);
+    double numerical = fdp_price_european_put(S, K, r, q, sigma, T, 1000, 1000);
     
     cr_assert_float_eq(numerical, analytical, 0.5,
                        "ATM put: FD=%.4f, BS=%.4f, diff=%.4f",
@@ -65,8 +65,8 @@ Test(black_scholes, put_call_parity)
 {
     double S = 100.0, K = 100.0, r = 0.05, q = 0.0, sigma = 0.20, T = 1.0;
     
-    double call = fdp_price_european_call(S, K, r, q, sigma, T, 200, 200);
-    double put = fdp_price_european_put(S, K, r, q, sigma, T, 200, 200);
+    double call = fdp_price_european_call(S, K, r, q, sigma, T, 1000, 1000);
+    double put = fdp_price_european_put(S, K, r, q, sigma, T, 1000, 1000);
     
     double parity_lhs = call - put;
     double parity_rhs = S - K * exp(-r * T);
@@ -80,7 +80,7 @@ Test(black_scholes, itm_call_vs_intrinsic)
 {
     double S = 100.0, K = 80.0, r = 0.05, q = 0.0, sigma = 0.20, T = 1.0;
     
-    double call = fdp_price_european_call(S, K, r, q, sigma, T, 200, 200);
+    double call = fdp_price_european_call(S, K, r, q, sigma, T, 1000, 1000);
     double intrinsic = S - K * exp(-r * T);
     
     cr_assert_gt(call, intrinsic,
@@ -95,8 +95,8 @@ Test(black_scholes, detailed_validation)
     double bs_call = black_scholes_call(S, K, r, q, sigma, T);
     double bs_put = black_scholes_put(S, K, r, q, sigma, T);
     
-    double fd_call = fdp_price_european_call(S, K, r, q, sigma, T, 200, 200);
-    double fd_put = fdp_price_european_put(S, K, r, q, sigma, T, 200, 200);
+    double fd_call = fdp_price_european_call(S, K, r, q, sigma, T, 1000, 1000);
+    double fd_put = fdp_price_european_put(S, K, r, q, sigma, T, 1000, 1000);
     
     printf("\n");
     printf("Black-Scholes vs Finite Difference:\n");
