@@ -43,10 +43,10 @@ void fdp_set_terminal_condition(
     int n = grid->n_space;
     
     /* DEBUG: Print space grid endpoints */
-    printf("DEBUG TERMINAL: n_space=%d\n", n);
-    printf("DEBUG TERMINAL: S[0]=%.6f, S[%d]=%.6f\n", S[0], n-1, S[n-1]);
-    printf("DEBUG TERMINAL: Strike K=%.6f, Type=%d (0=call, 1=put)\n", 
-           option->strike, option->type);
+    // printf("DEBUG TERMINAL: n_space=%d\n", n);
+    // printf("DEBUG TERMINAL: S[0]=%.6f, S[%d]=%.6f\n", S[0], n-1, S[n-1]);
+    // printf("DEBUG TERMINAL: Strike K=%.6f, Type=%d (0=call, 1=put)\n", 
+    //        option->strike, option->type);
     
     /* Set V(S, T) = payoff(S) */
     for (int i = 0; i < n; ++i) {
@@ -54,14 +54,15 @@ void fdp_set_terminal_condition(
     }
     
     /* DEBUG: Print payoffs at boundaries */
-    printf("DEBUG TERMINAL: Payoff at S[0]=%.6f: V[0]=%.6f\n", S[0], V[0]);
-    printf("DEBUG TERMINAL: Payoff at S[%d]=%.6f: V[%d]=%.6f\n", 
-           n-1, S[n-1], n-1, V[n-1]);
+    // printf("DEBUG TERMINAL: Payoff at S[0]=%.6f: V[0]=%.6f\n", S[0], V[0]);
+    // printf("DEBUG TERMINAL: Payoff at S[%d]=%.6f: V[%d]=%.6f\n", 
+    //        n-1, S[n-1], n-1, V[n-1]);
     
     /* DEBUG: Print a few middle points */
     int mid = n / 2;
-    printf("DEBUG TERMINAL: Payoff at S[%d]=%.6f: V[%d]=%.6f\n", 
-           mid, S[mid], mid, V[mid]);
+    (void)mid;
+    // printf("DEBUG TERMINAL: Payoff at S[%d]=%.6f: V[%d]=%.6f\n", 
+    //        mid, S[mid], mid, V[mid]);
 }
 
 /* ========================================================================
@@ -157,23 +158,26 @@ void fdp_solver_explicit_step(
     for (int i = 1; i < n - 1; ++i) {
         double mu, sigma, r;
         model->vtable->get_coefficients_1d(model, S[i], t, &mu, &sigma, &r);
-        
+
+        double mu_S    = mu * S[i];       /* (r - q) * S */
+        double sigma_S = sigma * S[i];    /* vol * S    */
+        double alpha   = 0.5 * sigma_S * sigma_S;  /* 0.5 * vol^2 * S^2 */
+
         /* Grid spacing */
-        double dS_plus = S[i + 1] - S[i];
+        double dS_plus  = S[i + 1] - S[i];
         double dS_minus = S[i] - S[i - 1];
-        // double dS_center = 0.5 * (dS_plus + dS_minus);
-        
-        /* First derivative coefficient */
+
+        /* First derivative dV/dS */
         double dV_dS = (V_old[i + 1] - V_old[i - 1]) / (dS_plus + dS_minus);
-        
-        /* Second derivative coefficient */
+
+        /* Second derivative d2V/dS2 */
         double d2V_dS2 = 2.0 * ((V_old[i + 1] - V_old[i]) / dS_plus -
-                                (V_old[i] - V_old[i - 1]) / dS_minus) / 
+                                (V_old[i] - V_old[i - 1]) / dS_minus) /
                          (dS_plus + dS_minus);
-        
-        /* PDE: dV/dt = mu*dV/dS + (1/2)*sigma^2*d^2V/dS^2 - r*V */
-        double dV_dt = mu * dV_dS + 0.5 * sigma * sigma * d2V_dS2 - r * V_old[i];
-        
+
+        /* Correct PDE */
+        double dV_dt = mu_S * dV_dS + alpha * d2V_dS2 - r * V_old[i];
+    
         /* Explicit Euler: V_new = V_old + dt * dV_dt */
         V_new[i] = V_old[i] + dt * dV_dt;
     }
@@ -192,15 +196,20 @@ void fdp_solver_implicit_step(
     double dt,
     double rate)
 {
-    (void)rate;
+    (void)rate; /* rate is obtained from the model coefficients */
     const double* S = grid->space_points;
     int n = grid->n_space;
 
-    /* Allocate tridiagonal system */
-    double* a = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);  /* lower diag: a[0..n-2] */
-    double* b = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);  /* main diag:  b[0..n-1] */
-    double* c = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);  /* upper diag: c[0..n-2] */
-    double* d = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);  /* RHS */
+    /* Allocate tridiagonal system:
+     * a: lower diagonal  [0..n-2]  (subdiagonal for rows 1..n-1)
+     * b: main diagonal   [0..n-1]
+     * c: upper diagonal  [0..n-2]  (superdiagonal for rows 0..n-2)
+     * d: RHS             [0..n-1]
+     */
+    double* a = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);
+    double* b = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);
+    double* c = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);
+    double* d = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);
 
     if (!a || !b || !c || !d) {
         if (a) fdp_ctx_free(model->ctx, a);
@@ -210,37 +219,49 @@ void fdp_solver_implicit_step(
         return;
     }
 
-    /* Row 0: boundary condition (Dirichlet-like) */
+    /* Row 0: boundary condition (Dirichlet-like: V^{n+1}_0 = V^n_0) */
+    a[0] = 0.0;        /* not used for row 0 */
     b[0] = 1.0;
     c[0] = 0.0;
     d[0] = V_old[0];
-    a[0] = 0.0;      /* unused for row 0 but keep it defined */
 
-    /* Interior rows 1..n-2 */
+    /* Interior rows: i = 1..n-2
+     *
+     * PDE in S-space (Black–Scholes):
+     *   dV/dt = (r - q) S dV/dS + 0.5 * (sigma^2) S^2 d^2V/dS^2 - r V
+     *
+     * Model gives:
+     *   mu    = (r - q)
+     *   sigma = vol
+     *
+     * We define:
+     *   mu_S    = mu * S[i]
+     *   sigma_S = sigma * S[i]
+     *   alpha   = 0.5 * sigma_S^2 = 0.5 * (sigma^2) S^2
+     *
+     * Using a non-uniform grid, the spatial operator L is discretized as:
+     *
+     *   L_im1 = (2*alpha - dS_minus * mu_S) / (dS_minus * (dS_minus + dS_plus))
+     *   L_i   = -2*alpha / (dS_minus * dS_plus) - r
+     *   L_ip1 = (2*alpha + dS_plus  * mu_S) / (dS_plus  * (dS_minus + dS_plus))
+     *
+     * Implicit Euler: (I - dt * L) V^{n+1} = V^n
+     *
+     * So the tridiagonal row i has:
+     *   a[i-1] = -dt * L_im1    (subdiagonal)
+     *   b[i]   =  1 - dt * L_i  (diagonal)
+     *   c[i]   = -dt * L_ip1    (superdiagonal)
+     */
     for (int i = 1; i < n - 1; ++i) {
         double mu, sigma, r;
         model->vtable->get_coefficients_1d(model, S[i], t + dt, &mu, &sigma, &r);
 
         double dS_plus  = S[i + 1] - S[i];
-        double dS_minus = S[i]   - S[i - 1];
+        double dS_minus = S[i]     - S[i - 1];
 
-        /* Local operator uses vol*S and (r-q)*S */
-        double mu_S    = mu * S[i];
-        double sigma_S = sigma * S[i];
-        double alpha   = 0.5 * sigma_S * sigma_S;
-
-        /* From the non-uniform second-derivative discretization we have:
-         *
-         * L_im1 = (2*alpha - dS_minus*mu_S) / (dS_minus * (dS_minus + dS_plus))
-         * L_i   = -2*alpha / (dS_minus * dS_plus) - r
-         * L_ip1 = (2*alpha + dS_plus*mu_S) / (dS_plus * (dS_minus + dS_plus))
-         *
-         * Implicit Euler: (I - dt L) V^{n+1} = V^n
-         * so:
-         *   a[i-1] = -dt * L_im1
-         *   b[i]   =  1 - dt * L_i
-         *   c[i]   = -dt * L_ip1
-         */
+        double mu_S    = mu * S[i];            /* (r - q) * S */
+        double sigma_S = sigma * S[i];         /* vol * S     */
+        double alpha   = 0.5 * sigma_S * sigma_S;  /* 0.5 * vol^2 * S^2 */
 
         double L_im1 = (2.0 * alpha - dS_minus * mu_S) /
                        (dS_minus * (dS_minus + dS_plus));
@@ -248,19 +269,19 @@ void fdp_solver_implicit_step(
         double L_ip1 = (2.0 * alpha + dS_plus * mu_S) /
                        (dS_plus * (dS_minus + dS_plus));
 
-        a[i - 1] = -dt * L_im1;  /* lower diag entry for row i */
+        a[i - 1] = -dt * L_im1;
         b[i]     = 1.0 - dt * L_i;
-        c[i]     = -dt * L_ip1;  /* upper diag entry for row i */
+        c[i]     = -dt * L_ip1;
         d[i]     = V_old[i];
     }
 
-    /* Row n-1: boundary condition */
-    a[n - 2] = 0.0;          /* lower diag for last row */
+    /* Row n-1: boundary condition (V^{n+1}_{n-1} = V^n_{n-1}) */
+    a[n - 2] = 0.0;     /* subdiagonal for last row */
     b[n - 1] = 1.0;
-    c[n - 1] = 0.0;          /* unused in solver, but keep defined */
+    c[n - 1] = 0.0;     /* unused but defined */
     d[n - 1] = V_old[n - 1];
 
-    /* Solve tridiagonal system */
+    /* Solve tridiagonal system (Thomas algorithm) */
     fdp_solve_tridiagonal(model->ctx, a, b, c, d, V_new, n);
 
     /* Cleanup */
@@ -567,12 +588,12 @@ fdp_result_t* fdp_solve_1d(
     fdp_set_terminal_condition(V_old, grid, option);
     
     /* DEBUG: Check terminal condition */
-    printf("DEBUG SOLVER: Checking terminal condition...\n");
+    // printf("DEBUG SOLVER: Checking terminal condition...\n");
     if (!check_array_valid(V_old, n_space, "V_terminal")) {
         printf("ERROR: Terminal condition has invalid values!\n");
     }
-    printf("DEBUG SOLVER: Terminal condition range: [%.6f, %.6f]\n", 
-           V_old[0], V_old[n_space-1]);
+    // printf("DEBUG SOLVER: Terminal condition range: [%.6f, %.6f]\n", 
+    //        V_old[0], V_old[n_space-1]);
     
     /* Store terminal condition in surface */
     memcpy(result->surface + n_time * n_space, V_old, n_space * sizeof(double));
@@ -582,9 +603,9 @@ fdp_result_t* fdp_solve_1d(
         double t = grid->time_points[n];
         
         /* DEBUG: Print info for first time step */
-        if (n == n_time - 1) {
-            printf("DEBUG SOLVER: First time step, t=%.6f, dt=%.6f, rate=%.6f\n", t, dt, rate);
-        }
+        // if (n == n_time - 1) {
+        //     printf("DEBUG SOLVER: First time step, t=%.6f, dt=%.6f, rate=%.6f\n", t, dt, rate);
+        // }
         
         /* Compute exercise value for American options */
         if (option->style == FDP_STYLE_AMERICAN) {
@@ -629,7 +650,7 @@ fdp_result_t* fdp_solve_1d(
         
         /* DEBUG: Check after first step */
         if (n == n_time - 1) {
-            printf("DEBUG SOLVER: After first step, checking V_new...\n");
+            // printf("DEBUG SOLVER: After first step, checking V_new...\n");
             if (!check_array_valid(V_new, n_space, "V_new_step1")) {
                 printf("ERROR: V_new has invalid values after first step!\n");
                 /* Print first few and last few values */
