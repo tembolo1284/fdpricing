@@ -92,7 +92,7 @@ double fdp_price_european_call(
     fdp_solver_params_set_method(params, FDP_SOLVER_CRANK_NICOLSON);
     
     /* Solve PDE */
-    printf("DEBUG: About to solve PDE\n");
+    // printf("DEBUG: About to solve PDE\n");
     fdp_result_t* result = fdp_solve_pde(ctx, model, option, grid, params);
     
     if (!result) {
@@ -104,10 +104,10 @@ double fdp_price_european_call(
         fdp_context_free(ctx);
         return -1.0;
     }
-    printf("DEBUG: About to extract price\n");
+    // printf("DEBUG: About to extract price\n");
     /* Extract price at current spot */
     double price = fdp_result_get_price(result, spot);
-    printf("DEBUG: Extracted price = %f\n", price);
+    // printf("DEBUG: Extracted price = %f\n", price);
     
     /* Cleanup */
     fdp_result_free(result);

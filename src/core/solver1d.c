@@ -400,105 +400,118 @@ void fdp_solver_psor_step(
     int max_iterations,
     int* iterations_taken)
 {
-    /* PSOR for American options: V >= exercise_value (free boundary)
-     * 
-     * Algorithm:
-     * 1. Solve implicit step to get V_temp
-     * 2. Project: V = max(V_temp, exercise_value)
-     * 3. Iterate with SOR until convergence
-     */
-    
+    (void)rate;
+
     const double* S = grid->space_points;
     int n = grid->n_space;
-    
-    /* Start with implicit solution */
+
+    /* 1) Start from a fully implicit step (same operator as implicit solver) */
     fdp_solver_implicit_step(V_new, V_old, grid, model, t, dt, rate);
-    
-    /* Project onto constraint */
+
+    /* Project onto early-exercise constraint: V >= exercise_value */
     for (int i = 0; i < n; ++i) {
         if (V_new[i] < exercise_value[i]) {
             V_new[i] = exercise_value[i];
         }
     }
-    
-    /* Build system matrices for SOR iterations */
-    double* a = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);
-    double* b = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);
-    double* c = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);
+
+    /* 2) Build tridiagonal system A * V = rhs for backward Euler
+     *    with the SAME spatial operator as in fdp_solver_implicit_step.
+     */
+
+    double* a   = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n); /* lower diag a[i] for row i */
+    double* b   = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n); /* main diag  */
+    double* c   = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n); /* upper diag */
     double* rhs = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);
-    
+
     if (!a || !b || !c || !rhs) {
-        if (a) fdp_ctx_free(model->ctx, a);
-        if (b) fdp_ctx_free(model->ctx, b);
-        if (c) fdp_ctx_free(model->ctx, c);
+        if (a)   fdp_ctx_free(model->ctx, a);
+        if (b)   fdp_ctx_free(model->ctx, b);
+        if (c)   fdp_ctx_free(model->ctx, c);
         if (rhs) fdp_ctx_free(model->ctx, rhs);
         if (iterations_taken) *iterations_taken = 0;
         return;
     }
-    
-    /* Build coefficient matrix (same as implicit) */
-    for (int i = 0; i < n; ++i) {
-        if (i == 0 || i == n - 1) {
-            a[i] = 0.0;
-            b[i] = 1.0;
-            c[i] = 0.0;
-            rhs[i] = V_old[i];
-        } else {
-            double mu, sigma, r;
-            model->vtable->get_coefficients_1d(model, S[i], t + dt, &mu, &sigma, &r);
-            
-            double dS_plus = S[i + 1] - S[i];
-            double dS_minus = S[i] - S[i - 1];
-            double alpha = 0.5 * sigma * sigma;
-            
-            a[i] = -dt * (-mu / (dS_plus + dS_minus) + 
-                          alpha * 2.0 / (dS_minus * (dS_plus + dS_minus)));
-            
-            c[i] = -dt * (mu / (dS_plus + dS_minus) + 
-                          alpha * 2.0 / (dS_plus * (dS_plus + dS_minus)));
-            
-            b[i] = 1.0 - dt * (-alpha * 2.0 * (1.0 / dS_plus + 1.0 / dS_minus) / 
-                               (dS_plus + dS_minus) - r);
-            
-            rhs[i] = V_old[i];
-        }
+
+    /* Boundary rows: Dirichlet-like (fixed by boundary conditions) */
+    a[0]   = 0.0;
+    b[0]   = 1.0;
+    c[0]   = 0.0;
+    rhs[0] = V_old[0];
+
+    a[n - 1]   = 0.0;
+    b[n - 1]   = 1.0;
+    c[n - 1]   = 0.0;
+    rhs[n - 1] = V_old[n - 1];
+
+    /* Interior rows: same non-uniform operator as implicit step */
+    for (int i = 1; i < n - 1; ++i) {
+        double mu, sigma, r;
+        model->vtable->get_coefficients_1d(model, S[i], t + dt, &mu, &sigma, &r);
+
+        double dS_plus  = S[i + 1] - S[i];
+        double dS_minus = S[i]     - S[i - 1];
+
+        double mu_S    = mu * S[i];        /* (r - q) * S */
+        double sigma_S = sigma * S[i];     /* vol * S     */
+        double alpha   = 0.5 * sigma_S * sigma_S;  /* 0.5 * vol^2 * S^2 */
+
+        /* Same L coefficients as implicit solver:
+         *   L_im1 = (2*alpha - dS_minus*mu_S) / (dS_minus * (dS_minus + dS_plus))
+         *   L_i   = -2*alpha / (dS_minus * dS_plus) - r
+         *   L_ip1 = (2*alpha + dS_plus*mu_S) / (dS_plus * (dS_minus + dS_plus))
+         *
+         * Backward Euler: (I - dt L) V^{n+1} = V^n
+         *   a[i] = -dt * L_im1
+         *   b[i] =  1.0 - dt * L_i
+         *   c[i] = -dt * L_ip1
+         */
+        double L_im1 = (2.0 * alpha - dS_minus * mu_S) /
+                       (dS_minus * (dS_minus + dS_plus));
+        double L_i   = -2.0 * alpha / (dS_minus * dS_plus) - r;
+        double L_ip1 = (2.0 * alpha + dS_plus * mu_S) /
+                       (dS_plus * (dS_minus + dS_plus));
+
+        a[i]   = -dt * L_im1;
+        b[i]   = 1.0 - dt * L_i;
+        c[i]   = -dt * L_ip1;
+        rhs[i] = V_old[i];
     }
-    
-    /* PSOR iterations */
+
+    /* 3) PSOR iterations on this system with projection */
+
     int iter;
     for (iter = 0; iter < max_iterations; ++iter) {
         double max_change = 0.0;
-        
+
+        /* Only update interior nodes, boundaries stay fixed */
         for (int i = 1; i < n - 1; ++i) {
-            /* Gauss-Seidel update */
+            /* Gauss–Seidel update for row i */
             double V_gs = (rhs[i] - a[i] * V_new[i - 1] - c[i] * V_new[i + 1]) / b[i];
-            
-            /* SOR relaxation */
+
+            /* Over-relaxation */
             double V_sor = (1.0 - omega) * V_new[i] + omega * V_gs;
-            
-            /* Projection onto constraint */
-            double V_projected = (V_sor > exercise_value[i]) ? V_sor : exercise_value[i];
-            
-            /* Track convergence */
-            double change = fabs(V_projected - V_new[i]);
+
+            /* Projection to enforce early exercise: V >= exercise_value */
+            double V_proj = (V_sor > exercise_value[i]) ? V_sor : exercise_value[i];
+
+            double change = fabs(V_proj - V_new[i]);
             if (change > max_change) {
                 max_change = change;
             }
-            
-            V_new[i] = V_projected;
+
+            V_new[i] = V_proj;
         }
-        
-        /* Check convergence */
+
         if (max_change < tolerance) {
-            break;
+            break;  /* converged */
         }
     }
-    
+
     if (iterations_taken) {
         *iterations_taken = iter + 1;
     }
-    
-    /* Cleanup */
+
     fdp_ctx_free(model->ctx, a);
     fdp_ctx_free(model->ctx, b);
     fdp_ctx_free(model->ctx, c);
