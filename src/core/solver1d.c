@@ -192,21 +192,16 @@ void fdp_solver_implicit_step(
     double dt,
     double rate)
 {
-    /* Implicit scheme: V^{n+1} - dt * L(V^{n+1}) = V^n
-     * 
-     * This leads to a tridiagonal system:
-     * a_i * V_{i-1} + b_i * V_i + c_i * V_{i+1} = d_i
-     */
     (void)rate;
     const double* S = grid->space_points;
     int n = grid->n_space;
-    
+
     /* Allocate tridiagonal system */
-    double* a = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);  /* Lower diagonal */
-    double* b = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);  /* Main diagonal */
-    double* c = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);  /* Upper diagonal */
+    double* a = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);  /* lower diag: a[0..n-2] */
+    double* b = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);  /* main diag:  b[0..n-1] */
+    double* c = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);  /* upper diag: c[0..n-2] */
     double* d = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);  /* RHS */
-    
+
     if (!a || !b || !c || !d) {
         if (a) fdp_ctx_free(model->ctx, a);
         if (b) fdp_ctx_free(model->ctx, b);
@@ -214,52 +209,60 @@ void fdp_solver_implicit_step(
         if (d) fdp_ctx_free(model->ctx, d);
         return;
     }
-    
-    /* Build tridiagonal system */
-    for (int i = 0; i < n; ++i) {
-        if (i == 0 || i == n - 1) {
-            /* Boundary points: V_new[i] = V_old[i] (fixed by BC) */
-            a[i] = 0.0;
-            b[i] = 1.0;
-            c[i] = 0.0;
-            d[i] = V_old[i];
-        } else {
-            /* Interior points */
-            double mu, sigma, r;
-            model->vtable->get_coefficients_1d(model, S[i], t + dt, &mu, &sigma, &r);
-            
-            double dS_plus = S[i + 1] - S[i];
-            double dS_minus = S[i] - S[i - 1];
-            // double h_squared = dS_plus * dS_minus;
-            
-            /* Coefficients for implicit discretization */
-            /* V_i - dt * [mu*(V_{i+1} - V_{i-1})/(dS+ + dS-) 
-             *            + (1/2)*sigma^2*2*(V_{i+1}/dS+ - V_i*(1/dS+ + 1/dS-) + V_{i-1}/dS-)/(dS+ + dS-)
-             *            - r*V_i] = V_old_i
-             */
-            
-            double alpha = 0.5 * sigma * sigma;
-            
-            /* Lower diagonal coefficient (V_{i-1}) */
-            a[i] = -dt * (-mu / (dS_plus + dS_minus) + 
-                          alpha * 2.0 / (dS_minus * (dS_plus + dS_minus)));
-            
-            /* Upper diagonal coefficient (V_{i+1}) */
-            c[i] = -dt * (mu / (dS_plus + dS_minus) + 
-                          alpha * 2.0 / (dS_plus * (dS_plus + dS_minus)));
-            
-            /* Main diagonal coefficient (V_i) */
-            b[i] = 1.0 - dt * (-alpha * 2.0 * (1.0 / dS_plus + 1.0 / dS_minus) / 
-                               (dS_plus + dS_minus) - r);
-            
-            /* Right-hand side */
-            d[i] = V_old[i];
-        }
+
+    /* Row 0: boundary condition (Dirichlet-like) */
+    b[0] = 1.0;
+    c[0] = 0.0;
+    d[0] = V_old[0];
+    a[0] = 0.0;      /* unused for row 0 but keep it defined */
+
+    /* Interior rows 1..n-2 */
+    for (int i = 1; i < n - 1; ++i) {
+        double mu, sigma, r;
+        model->vtable->get_coefficients_1d(model, S[i], t + dt, &mu, &sigma, &r);
+
+        double dS_plus  = S[i + 1] - S[i];
+        double dS_minus = S[i]   - S[i - 1];
+
+        /* Local operator uses vol*S and (r-q)*S */
+        double mu_S    = mu * S[i];
+        double sigma_S = sigma * S[i];
+        double alpha   = 0.5 * sigma_S * sigma_S;
+
+        /* From the non-uniform second-derivative discretization we have:
+         *
+         * L_im1 = (2*alpha - dS_minus*mu_S) / (dS_minus * (dS_minus + dS_plus))
+         * L_i   = -2*alpha / (dS_minus * dS_plus) - r
+         * L_ip1 = (2*alpha + dS_plus*mu_S) / (dS_plus * (dS_minus + dS_plus))
+         *
+         * Implicit Euler: (I - dt L) V^{n+1} = V^n
+         * so:
+         *   a[i-1] = -dt * L_im1
+         *   b[i]   =  1 - dt * L_i
+         *   c[i]   = -dt * L_ip1
+         */
+
+        double L_im1 = (2.0 * alpha - dS_minus * mu_S) /
+                       (dS_minus * (dS_minus + dS_plus));
+        double L_i   = -2.0 * alpha / (dS_minus * dS_plus) - r;
+        double L_ip1 = (2.0 * alpha + dS_plus * mu_S) /
+                       (dS_plus * (dS_minus + dS_plus));
+
+        a[i - 1] = -dt * L_im1;  /* lower diag entry for row i */
+        b[i]     = 1.0 - dt * L_i;
+        c[i]     = -dt * L_ip1;  /* upper diag entry for row i */
+        d[i]     = V_old[i];
     }
-    
+
+    /* Row n-1: boundary condition */
+    a[n - 2] = 0.0;          /* lower diag for last row */
+    b[n - 1] = 1.0;
+    c[n - 1] = 0.0;          /* unused in solver, but keep defined */
+    d[n - 1] = V_old[n - 1];
+
     /* Solve tridiagonal system */
     fdp_solve_tridiagonal(model->ctx, a, b, c, d, V_new, n);
-    
+
     /* Cleanup */
     fdp_ctx_free(model->ctx, a);
     fdp_ctx_free(model->ctx, b);
@@ -281,18 +284,16 @@ void fdp_solver_crank_nicolson_step(
     double rate)
 {
     (void)rate;
-    
+
     const double* S = grid->space_points;
     int n = grid->n_space;
     double theta = 0.5;
-    double dt_eff = -dt;
-    
-    /* Allocate tridiagonal system */
+
     double* a = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);
     double* b = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);
     double* c = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);
     double* d = FDP_CTX_ALLOC_ARRAY(model->ctx, double, n);
-    
+
     if (!a || !b || !c || !d) {
         if (a) fdp_ctx_free(model->ctx, a);
         if (b) fdp_ctx_free(model->ctx, b);
@@ -300,63 +301,60 @@ void fdp_solver_crank_nicolson_step(
         if (d) fdp_ctx_free(model->ctx, d);
         return;
     }
-    
-    /* Build system */
-    for (int i = 0; i < n; ++i) {
-        if (i == 0 || i == n - 1) {
-            a[i] = 0.0;
-            b[i] = 1.0;
-            c[i] = 0.0;
-            d[i] = V_old[i];
-        } else {
-            double mu, sigma, r;
-            model->vtable->get_coefficients_1d(model, S[i], t + dt_eff * theta, 
-                                               &mu, &sigma, &r);
-            
-            /* Model returns: mu = (r-q), sigma = vol
-             * We need to construct: (r-q)*S and vol*S for the PDE
-             */
-            double mu_S = mu * S[i];        // (r-q)*S
-            double sigma_S = sigma * S[i];  // vol*S
-            
-            double dS_plus = S[i + 1] - S[i];
-            double dS_minus = S[i] - S[i - 1];
-            double alpha = 0.5 * sigma_S * sigma_S;  // 0.5 * vol² * S²
-            
-            /* Implicit part coefficients (LHS) */
-            double a_impl = -theta * dt_eff * (-mu_S / (dS_plus + dS_minus) + 
-                            alpha * 2.0 / (dS_minus * (dS_plus + dS_minus)));
-            
-            double c_impl = -theta * dt_eff * (mu_S / (dS_plus + dS_minus) + 
-                            alpha * 2.0 / (dS_plus * (dS_plus + dS_minus)));
-            
-            double b_impl = 1.0 - theta * dt_eff * (-alpha * 2.0 * (1.0 / dS_plus + 1.0 / dS_minus) / 
-                            (dS_plus + dS_minus) - r);
-            
-            /* Explicit part coefficients (RHS) */
-            double a_expl = (1.0 - theta) * dt_eff * (-mu_S / (dS_plus + dS_minus) + 
-                            alpha * 2.0 / (dS_minus * (dS_plus + dS_minus)));
-            
-            double c_expl = (1.0 - theta) * dt_eff * (mu_S / (dS_plus + dS_minus) + 
-                            alpha * 2.0 / (dS_plus * (dS_plus + dS_minus)));
-            
-            double b_expl = 1.0 + (1.0 - theta) * dt_eff * (-alpha * 2.0 * (1.0 / dS_plus + 1.0 / dS_minus) / 
-                            (dS_plus + dS_minus) - r);
-            
-            /* Set system coefficients */
-            a[i] = a_impl;
-            b[i] = b_impl;
-            c[i] = c_impl;
-            
-            /* RHS: Apply explicit part to V_old */
-            d[i] = b_expl * V_old[i] + a_expl * V_old[i - 1] + c_expl * V_old[i + 1];
-        }
+
+    /* Row 0: boundary */
+    b[0] = 1.0;
+    c[0] = 0.0;
+    d[0] = V_old[0];
+    a[0] = 0.0;  /* unused */
+
+    /* Interior rows 1..n-2 */
+    for (int i = 1; i < n - 1; ++i) {
+        double mu, sigma, r;
+        model->vtable->get_coefficients_1d(
+            model, S[i], t + dt * theta, &mu, &sigma, &r);
+
+        double mu_S    = mu * S[i];
+        double sigma_S = sigma * S[i];
+        double dS_plus  = S[i + 1] - S[i];
+        double dS_minus = S[i]     - S[i - 1];
+        double alpha    = 0.5 * sigma_S * sigma_S;
+
+        /* Same L_im1, L_i, L_ip1 as above */
+        double L_im1 = (2.0 * alpha - dS_minus * mu_S) /
+                       (dS_minus * (dS_minus + dS_plus));
+        double L_i   = -2.0 * alpha / (dS_minus * dS_plus) - r;
+        double L_ip1 = (2.0 * alpha + dS_plus * mu_S) /
+                       (dS_plus * (dS_minus + dS_plus));
+
+        /* Implicit part: I - θ dt L */
+        double a_impl = -theta * dt * L_im1;
+        double b_impl = 1.0     - theta * dt * L_i;
+        double c_impl = -theta * dt * L_ip1;
+
+        /* Explicit part: I + (1-θ) dt L */
+        double a_expl = (1.0 - theta) * dt * L_im1;
+        double b_expl = 1.0 + (1.0 - theta) * dt * L_i;
+        double c_expl = (1.0 - theta) * dt * L_ip1;
+
+        /* Store into tri-di system with correct indexing */
+        a[i - 1] = a_impl;
+        b[i]     = b_impl;
+        c[i]     = c_impl;
+
+        d[i] = a_expl * V_old[i - 1] +
+               b_expl * V_old[i]     +
+               c_expl * V_old[i + 1];
     }
-    
-    /* Solve */
+
+    /* Last row n-1: boundary */
+    a[n - 2] = 0.0;
+    b[n - 1] = 1.0;
+    c[n - 1] = 0.0;
+    d[n - 1] = V_old[n - 1];
+
     fdp_solve_tridiagonal(model->ctx, a, b, c, d, V_new, n);
-    
-    /* Cleanup */
+
     fdp_ctx_free(model->ctx, a);
     fdp_ctx_free(model->ctx, b);
     fdp_ctx_free(model->ctx, c);
