@@ -88,7 +88,7 @@ typedef struct fdp_result_s fdp_result_t;
 /* Option types */
 typedef enum {
     FDP_OPTION_CALL = 0,
-    FDP_OPTION_PUT = 1
+    FDP_OPTION_PUT  = 1
 } fdp_option_type_t;
 
 /* Option styles */
@@ -100,48 +100,48 @@ typedef enum {
 
 /* Barrier types */
 typedef enum {
-    FDP_BARRIER_NONE = 0,
-    FDP_BARRIER_UP_OUT = 1,
-    FDP_BARRIER_UP_IN = 2,
-    FDP_BARRIER_DOWN_OUT = 3,
-    FDP_BARRIER_DOWN_IN = 4
+    FDP_BARRIER_NONE      = 0,
+    FDP_BARRIER_UP_OUT    = 1,
+    FDP_BARRIER_UP_IN     = 2,
+    FDP_BARRIER_DOWN_OUT  = 3,
+    FDP_BARRIER_DOWN_IN   = 4
 } fdp_barrier_type_t;
 
 /* Model types */
 typedef enum {
-    FDP_MODEL_GBM = 0,
-    FDP_MODEL_HESTON = 1,
-    FDP_MODEL_SABR = 2,
-    FDP_MODEL_MERTON_JUMP = 3,
-    FDP_MODEL_KOU_JUMP = 4,
-    FDP_MODEL_BATES = 5,
-    FDP_MODEL_LOCAL_VOL = 6
+    FDP_MODEL_GBM          = 0,
+    FDP_MODEL_HESTON       = 1,
+    FDP_MODEL_SABR         = 2,
+    FDP_MODEL_MERTON_JUMP  = 3,
+    FDP_MODEL_KOU_JUMP     = 4,
+    FDP_MODEL_BATES        = 5,
+    FDP_MODEL_LOCAL_VOL    = 6
 } fdp_model_type_t;
 
 /* Solver methods */
 typedef enum {
-    FDP_SOLVER_EXPLICIT = 0,      /* Explicit Euler (forward) */
-    FDP_SOLVER_IMPLICIT = 1,      /* Implicit Euler (backward) */
-    FDP_SOLVER_CRANK_NICOLSON = 2, /* Crank-Nicolson */
-    FDP_SOLVER_PSOR = 3           /* Projected SOR (for American) */
+    FDP_SOLVER_EXPLICIT       = 0, /* Explicit Euler (forward)        */
+    FDP_SOLVER_IMPLICIT       = 1, /* Implicit Euler (backward)       */
+    FDP_SOLVER_CRANK_NICOLSON = 2, /* Crank-Nicolson                  */
+    FDP_SOLVER_PSOR           = 3  /* Projected SOR (for American)    */
 } fdp_solver_method_t;
 
 /* Grid types */
 typedef enum {
-    FDP_GRID_UNIFORM = 0,
-    FDP_GRID_LOG_UNIFORM = 1,
-    FDP_GRID_SINH = 2,
-    FDP_GRID_ADAPTIVE = 3
+    FDP_GRID_UNIFORM      = 0,
+    FDP_GRID_LOG_UNIFORM  = 1,
+    FDP_GRID_SINH         = 2,
+    FDP_GRID_ADAPTIVE     = 3
 } fdp_grid_type_t;
 
 /* Error codes */
 typedef enum {
-    FDP_SUCCESS = 0,
-    FDP_ERROR_INVALID_PARAM = -1,
-    FDP_ERROR_ALLOCATION = -2,
-    FDP_ERROR_CONVERGENCE = -3,
+    FDP_SUCCESS           = 0,
+    FDP_ERROR_INVALID_PARAM   = -1,
+    FDP_ERROR_ALLOCATION      = -2,
+    FDP_ERROR_CONVERGENCE     = -3,
     FDP_ERROR_NOT_IMPLEMENTED = -4,
-    FDP_ERROR_STABILITY = -5
+    FDP_ERROR_STABILITY       = -5
 } fdp_error_t;
 
 /* ========================================================================
@@ -217,9 +217,9 @@ FDP_API const double* fdp_grid_get_time_points(const fdp_grid_t* grid);
 /* GBM (Black-Scholes) Model */
 FDP_API fdp_model_t* fdp_model_new_gbm(
     fdp_context_t* ctx,
-    double rate,      /* Risk-free rate */
-    double div_yield, /* Dividend yield */
-    double vol        /* Volatility */
+    double rate,      /* Risk-free rate   */
+    double div_yield, /* Dividend yield   */
+    double vol        /* Volatility       */
 );
 
 /* Heston Stochastic Volatility Model */
@@ -228,10 +228,10 @@ FDP_API fdp_model_t* fdp_model_new_heston(
     double rate,
     double div_yield,
     double kappa,     /* Mean reversion speed */
-    double theta,     /* Long-term variance */
-    double sigma,     /* Vol of vol */
-    double rho,       /* Correlation */
-    double v0         /* Initial variance */
+    double theta,     /* Long-term variance   */
+    double sigma,     /* Vol of vol           */
+    double rho,       /* Correlation          */
+    double v0         /* Initial variance     */
 );
 
 /* Merton Jump-Diffusion Model */
@@ -240,9 +240,9 @@ FDP_API fdp_model_t* fdp_model_new_merton_jump(
     double rate,
     double div_yield,
     double vol,
-    double lambda,    /* Jump intensity */
-    double mu_j,      /* Jump mean (log) */
-    double sigma_j    /* Jump std dev (log) */
+    double lambda,    /* Jump intensity      */
+    double mu_j,      /* Jump mean (log)     */
+    double sigma_j    /* Jump std dev (log)  */
 );
 
 FDP_API void fdp_model_free(fdp_model_t* model);
@@ -358,7 +358,7 @@ FDP_API double fdp_result_get_price(const fdp_result_t* result, double spot);
 FDP_API double fdp_result_get_delta(const fdp_result_t* result, double spot);
 FDP_API double fdp_result_get_gamma(const fdp_result_t* result, double spot);
 FDP_API double fdp_result_get_theta(const fdp_result_t* result, double spot);
-FDP_API int fdp_result_get_iterations(const fdp_result_t* result);
+FDP_API int    fdp_result_get_iterations(const fdp_result_t* result);
 FDP_API fdp_error_t fdp_result_get_error_code(const fdp_result_t* result);
 
 /* Get the full solution surface (n_space × n_time array) */
@@ -373,6 +373,7 @@ FDP_API const double* fdp_result_get_surface(const fdp_result_t* result);
  * Returns price directly, no need to manage objects
  */
 
+/* European vanilla */
 FDP_API double fdp_price_european_call(
     double spot,
     double strike,
@@ -395,6 +396,7 @@ FDP_API double fdp_price_european_put(
     int n_time
 );
 
+/* American vanilla */
 FDP_API double fdp_price_american_call(
     double spot,
     double strike,
@@ -417,12 +419,83 @@ FDP_API double fdp_price_american_put(
     int n_time
 );
 
+/* Barrier options: generic convenience function */
+FDP_API double fdp_price_barrier_option(
+    double spot,
+    double strike,
+    double barrier,
+    double rate,
+    double div_yield,
+    double vol,
+    double maturity,
+    fdp_option_type_t option_type,
+    fdp_barrier_type_t barrier_type,
+    double rebate,
+    int n_space,
+    int n_time
+);
+
+/* Barrier options: specific wrappers */
+
+/* Up-and-out call (no rebate) */
+FDP_API double fdp_price_up_and_out_call(
+    double spot,
+    double strike,
+    double barrier,
+    double rate,
+    double div_yield,
+    double vol,
+    double maturity,
+    int n_space,
+    int n_time
+);
+
+/* Down-and-out put (no rebate) */
+FDP_API double fdp_price_down_and_out_put(
+    double spot,
+    double strike,
+    double barrier,
+    double rate,
+    double div_yield,
+    double vol,
+    double maturity,
+    int n_space,
+    int n_time
+);
+
+/* Up-and-in call (no rebate) */
+FDP_API double fdp_price_up_and_in_call(
+    double spot,
+    double strike,
+    double barrier,
+    double rate,
+    double div_yield,
+    double vol,
+    double maturity,
+    int n_space,
+    int n_time
+);
+
+/* Down-and-in put (no rebate) */
+FDP_API double fdp_price_down_and_in_put(
+    double spot,
+    double strike,
+    double barrier,
+    double rate,
+    double div_yield,
+    double vol,
+    double maturity,
+    int n_space,
+    int n_time
+);
+
 /* ========================================================================
  * Error Handling
  * ======================================================================== */
 
-FDP_API const char* fdp_get_error_string(fdp_error_t error);
-FDP_API fdp_error_t fdp_get_last_error(fdp_context_t* ctx);
-FDP_API void fdp_clear_error(fdp_context_t* ctx);
+FDP_API const char*   fdp_get_error_string(fdp_error_t error);
+FDP_API fdp_error_t   fdp_get_last_error(fdp_context_t* ctx);
+FDP_API void          fdp_clear_error(fdp_context_t* ctx);
 
 #endif /* FDPRICING_H_INCLUDED */
+
